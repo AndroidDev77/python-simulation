@@ -81,46 +81,6 @@ class Simulation:
             mass = self.selected_mass
         self.particles.append(Particle(mass, pos, vel))
 
-    def calculate_tangential_velocity(self, particle_pos, mouse_pos):
-        # Calculate the radial vector from the sun to the particle
-        radial_vector = particle_pos - self.sun.pos
-        radial_distance = np.linalg.norm(radial_vector)
-
-        if radial_distance == 0:
-            return np.array([0.0, 0.0])  # Avoid division by zero
-
-        # Normalize the radial vector
-        radial_unit_vector = radial_vector / radial_distance
-
-        # Calculate the tangential vector (perpendicular to the radial vector)
-        tangential_vector = np.array([-radial_unit_vector[0], radial_unit_vector[1]])
-
-        # Scale the tangential velocity based on the mouse drag distance
-        drag_distance = np.linalg.norm(mouse_pos - self.start_mouse_pos)
-        velocity_magnitude = drag_distance * 1e3 / self.scale  # Adjust scaling factor as needed
-
-        return tangential_vector * velocity_magnitude
-
-    def calculate_orbital_velocity(self, position):
-        """Calculate the proper orbital velocity for a stable orbit at the given position."""
-        # Vector from sun to particle position
-        r_vec = position - self.sun.pos
-        r_mag = np.linalg.norm(r_vec)
-        
-        if r_mag == 0:
-            return np.array([0.0, 0.0])
-        
-        # Calculate the required orbital speed for a circular orbit using v = sqrt(GM/r)
-        # This is derived from equating centripetal force to gravitational force
-        orbit_speed = np.sqrt(G * self.sun.mass / r_mag)
-        
-        # Create a perpendicular vector for the orbital direction
-        # To orbit counterclockwise, we need velocity perpendicular to the radial vector
-        orbital_direction = np.array([-r_vec[1], r_vec[0]]) / r_mag
-        
-        # The orbital velocity vector
-        return orbital_direction * orbit_speed
-
     def calculate_rubber_band_velocity(self, start_pos, current_pos):
         """Calculate velocity based on rubber band effect from drag distance and direction."""
         # Vector from start to current mouse position (the drag vector)

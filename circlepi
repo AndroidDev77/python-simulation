@@ -1,0 +1,137 @@
+# Fully re-initialize and re-render the visualization to ensure visibility
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import Circle
+from matplotlib.widgets import Slider
+from scipy.spatial import distance
+import matplotlib.cm as cm
+
+# === Geometry and Folding Functions with Ancestry ===
+
+def generate_square(radius):
+    points = [
+        (-radius, -radius),
+        (-radius, radius),
+        (radius, radius),
+        (radius, -radius)
+    ]
+    return [(x, y, i) for i, (x, y) in enumerate(points)]
+
+def get_inward_direction(prev_point, current_point, next_point):
+    v1 = np.array(prev_point[:2], dtype=float) - np.array(current_point[:2], dtype=float)
+    v2 = np.array(next_point[:2], dtype=float) - np.array(current_point[:2], dtype=float)
+    norm1 = np.linalg.norm(v1)
+    norm2 = np.linalg.norm(v2)
+    if norm1 == 0 or norm2 == 0:
+        return np.array([0, 0], dtype=float)
+    v1 /= norm1
+    v2 /= norm2
+    bisector = v1 + v2
+    if np.linalg.norm(bisector) == 0:
+        bisector = np.array([-v1[1], v1[0]])
+    return bisector / np.linalg.norm(bisector)
+
+
+def fold_corner_annotated(corner, direction, radius, origin_index):
+    x0, y0 = corner[:2]
+    dx, dy = direction
+    a = dx**2 + dy**2
+    b = 2 * (x0 * dx + y0 * dy)
+    c = x0**2 + y0**2 - radius**2
+    t = (-b - np.sqrt(b**2 - 4 * a * c)) / (2 * a)
+    cx = x0 + t * dx
+    cy = y0 + t * dy
+    if dx != 0:
+        return [(cx, y0, origin_index), (cx, cy, origin_index), (x0, cy, origin_index)]
+    else:
+        return [(x0, cy, origin_index), (cx, cy, origin_index), (cx, y0, origin_index)]
+
+def fold_shape_ordered_annotated(shape, radius):
+    ordered_folds = []
+    n = len(shape)
+    for i in range(n):
+        prev = shape[i - 1]
+        current = shape[i]
+        nxt = shape[(i + 1) % n]
+
+        x, y = current[:2]
+        if abs(np.hypot(x, y) - radius) < 1e-4:
+            ordered_folds.append([current])  # keep as-is
+            continue
+
+        direction = get_inward_direction(prev, current, nxt)
+        folded = fold_corner_annotated(current, direction, radius, current[2])
+        ordered_folds.append(folded)
+
+    ordered_path = []
+    for i, segment in enumerate(ordered_folds):
+        ordered_path += segment if i % 2 == 0 else segment[::-1]
+    return ordered_path
+
+
+def connect_by_nearest_neighbor_annotated(points):
+    path = [points[0]]
+    used = set([0])
+    while len(used) < len(points):
+        last = path[-1]
+        nearest_idx = min(
+            (i for i in range(len(points)) if i not in used),
+            key=lambda i: distance.euclidean(last[:2], points[i][:2])
+        )
+        path.append(points[nearest_idx])
+        used.add(nearest_idx)
+    path.append(path[0])
+    return path
+
+def compute_perimeter(path):
+    return sum(np.linalg.norm(np.array(path[i][:2]) - np.array(path[i + 1][:2])) for i in range(len(path) - 1))
+
+# === UI and Plotting ===
+
+radius = 1
+fig, ax = plt.subplots(figsize=(6, 6))
+plt.subplots_adjust(bottom=0.25)
+circle_patch = Circle((0, 0), radius=1, fill=False, color='blue', linewidth=2)
+ax.add_patch(circle_patch)
+path_line, = ax.plot([], [], 'c-', linewidth=2)
+perim_text = ax.text(0.02, 0.95, '', transform=ax.transAxes, fontsize=12, ha='left', va='top')
+point_dots = []
+
+ax.set_aspect('equal')
+ax.grid(True)
+ax.set_title("Ancestry Coloring by Origin Point")
+
+ax_slider = plt.axes([0.2, 0.08, 0.6, 0.05])
+fold_slider = Slider(ax_slider, 'Folds', 0, 9, valinit=0, valstep=1)
+
+def update(val):
+    global point_dots
+    num_folds = int(fold_slider.val)
+    shape = generate_square(radius)
+    for _ in range(num_folds):
+        shape = fold_shape_ordered_annotated(shape, radius)
+
+    nn_path = connect_by_nearest_neighbor_annotated(shape)
+    perimeter = compute_perimeter(nn_path)
+    fx, fy = zip(*[p[:2] for p in nn_path])
+    path_line.set_data(fx, fy)
+    perim_text.set_text(f'Perimeter: {perimeter:.5f}')
+
+    for dot in point_dots:
+        dot.remove()
+    point_dots.clear()
+
+    colors = cm.rainbow(np.linspace(0, 1, 4))
+    origin_indices = [p[2] for p in nn_path]
+    color_map = {idx: colors[idx % 4] for idx in set(origin_indices)}
+
+    for x, y, origin in nn_path:
+        dot = ax.plot(x, y, marker='o', markersize=3, color=color_map[origin])[0]
+        point_dots.append(dot)
+
+    fig.canvas.draw_idle()
+
+fold_slider.on_changed(update)
+update(0)
+plt.show()
